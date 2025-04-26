@@ -1,0 +1,239 @@
+Нужно запилить в компоненте UserTable.jsx опциональную систему фильров.
+Важно чтобы не сломался пейджинг и фильтры можно было бы отменить при их использовании.
+
+Нужен фильтр по процентам, языкам и группам.
+
+backend:
+
+server.js:
+const express = require('express');
+const cors = require('cors');
+const { initData, getUsers } = require('./service');
+
+const PORT = process.env.PORT || 3001;
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+initData()
+  .then(() => console.log('Data loaded'))
+  .catch(err => {
+    console.error('Init error:', err);
+    process.exit(1);
+  });
+
+app.get('/users', (req, res) => {
+  const { search = '', page = '1', limit = '10' } = req.query;
+  const { total, users } = getUsers({
+    search,
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10)
+  });
+  res.json({ page: Number(page), limit: Number(limit), total, users });
+});
+
+
+app.listen(PORT, () => {
+  console.log(`Server listening at http://localhost:${PORT}`);
+});
+
+
+
+service.js:
+const fs = require('fs');
+const path = require('path');
+let data = [];
+
+async function initData() {
+  const filePath = path.join(__dirname, 'users2.csv');
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  const lines = content.split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) {
+    data = [];
+    return;
+  }
+
+  const rawHeaders = lines[0].split(';').map(h => h.trim());
+
+  data = lines.slice(1).map(line => {
+    const cols = line.split(';');
+    const obj = {};
+
+    rawHeaders.forEach((key, idx) => {
+      if (key) {
+        obj[key] = cols[idx] ? cols[idx].trim() : '';
+      }
+    });
+
+    return obj;
+  });
+}
+
+function getUsers({ search = '', page = 1, limit = 10 }) {
+  const term = search.trim().toLowerCase();
+  let filtered = data;
+
+  if (term) {
+    filtered = data.filter(item =>
+      Object.values(item).some(val =>
+        String(val).toLowerCase().includes(term)
+      )
+    );
+  }
+
+  const total = filtered.length;
+  const start = (page - 1) * limit;
+  const users = filtered.slice(start, start + limit);
+
+  return { total, users };
+}
+
+module.exports = { initData, getUsers };
+
+
+
+frontend:
+App.jsx:
+import { useState, useEffect } from 'react';
+import Navbar from './components/Navbar';
+import SearchBar from './components/SearchBar';
+import UserTable from './components/UserTable';
+import axios from 'axios';
+import './App.css';
+
+function App() {
+  const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [total, setTotal] = useState(0);
+
+  const fetchUsers = async () => {
+    const res = await axios.get('http://localhost:3001/users', { params: { search, page, limit } });
+    setUsers(res.data.users);
+    setTotal(res.data.total);
+  };
+
+  useEffect(() => { fetchUsers(); }, [search, page]);
+
+  return (
+    <div className="app-wrapper">
+      <Navbar />
+      <div className="container content">
+        <SearchBar value={search} onChange={term => { setSearch(term); setPage(1); }} />
+        <UserTable
+          users={users}
+          total={total}
+          page={page}
+          limit={limit}
+          onPageChange={p => setPage(p)}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+
+UserTable.jsx:
+import ReactPaginate from 'react-paginate';
+import '../App.css';
+
+export default function UserTable({ users, total, page, limit, onPageChange }) {
+  const pageCount = Math.ceil(total / limit);
+
+  const columns = [
+    { key: 'ФИО', label: 'ФИО' },
+    { key: 'Почта', label: 'Почта' },
+    { key: 'Логин', label: 'Логин' },
+    { key: 'Статус', label: 'Статус' },
+    { key: 'Телефон', label: 'Телефон' },
+    { key: 'group', label: 'Группа' },
+    { key: 'langs', label: 'Языки' },
+    { key: 'proficiency', label: 'Уровень*' }
+  ];
+
+  return (
+    <>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            {columns.map(col => (
+              <th key={col.key} style={thTdStyle}>{col.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((u, i) => (
+            <tr key={i} style={i % 2 ? { backgroundColor: '#f9f9f9' } : {}}>
+              {columns.map(col => (
+                <td key={col.key} style={thTdStyle}>
+                  {u[col.key] || ''}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+          <p>* - Уровень показывает, насколько хорошо студент владеет указанными технологиями.</p>
+
+      <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+        <ReactPaginate
+          pageCount={pageCount}
+          forcePage={page - 1}
+          onPageChange={c => onPageChange(c.selected + 1)}
+          marginPagesDisplayed={1}
+          pageRangeDisplayed={3}
+          breakLabel="…"
+          breakClassName="page-item"
+          breakLinkClassName="page-link"
+          containerClassName="pagination"
+          pageLinkClassName="page-link"
+          previousLabel="<"
+          nextLabel=">"
+          activeClassName="active"
+        />
+      </div>
+    </>
+  );
+}
+
+const tableStyle = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: '0.95rem'
+};
+const thTdStyle = {
+  border: '1px solid #ddd',
+  padding: '0.75rem',
+  textAlign: 'left'
+};
+
+
+
+searchbar.jsx:
+export default function SearchBar({ value, onChange }) {
+    return (
+      <div style={{ margin: '1.5rem 0' }}>
+        <input
+          type="text"
+          placeholder="Поиск студентов..."
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={inputStyle}
+        />
+      </div>
+    );
+  }
+  
+  const inputStyle = {
+    width: '100%',
+    padding: '0.75rem',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    fontSize: '1rem'
+  };
