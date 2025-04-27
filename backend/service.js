@@ -49,8 +49,10 @@ function getUsers({ search = "", page = 1, limit = 10, filters = {} }) {
 
   if (filters.langs.length) {
     filtered = filtered.filter((item) => {
-      const userLangs = item.langs.split(/\s+/).map((s) => s.trim());
-      return filters.langs.every((l) => userLangs.includes(l));
+      const userLangs = item.langs
+        ? item.langs.split(/\s+/).map((s) => s.trim().toLowerCase())
+        : [];
+      return filters.langs.every((l) => userLangs.includes(l.toLowerCase()));
     });
   }
 
@@ -58,12 +60,14 @@ function getUsers({ search = "", page = 1, limit = 10, filters = {} }) {
     filtered = filtered.filter((item) => filters.groups.includes(item.group));
   }
 
-  if (filters.softSkills && filters.softSkills.length) {
+  if (filters.softSkills.length) {
     filtered = filtered.filter((item) => {
       const userSkills = item.soft_skills
-        ? item.soft_skills.split(", ").map((s) => s.trim())
+        ? item.soft_skills.split(", ").map((s) => s.trim().toLowerCase())
         : [];
-      return filters.softSkills.every((skill) => userSkills.includes(skill));
+      return filters.softSkills.every((skill) =>
+        userSkills.includes(skill.toLowerCase())
+      );
     });
   }
 
